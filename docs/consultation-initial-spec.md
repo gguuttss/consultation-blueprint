@@ -3,14 +3,14 @@
 Governance working will happen in a 3-part governance procedure:
 1. Request for Comment (RFC): A draft proposal, can be posted anywhere, such as [RadixTalk](https://radixtalk.com/c/governance/radix-community-dao/52) (not on-chain)
 2. Temperature Check: Pushing all proposal details to chain, and voting on whether the proposal has enough merit to be officially voted on.
-3. Request for Proposal (RFP): A passed temperature check is elevated to an RFP, which can be voted on by the community.
+3. Governance Proposal (GP): A passed temperature check is elevated to an GP, which can be voted on by the community.
 
-Temperature checks and RFP votes are counted off-chain. The voting power of a user depends on their LSU holdings converted to XRD at the **start of the vote**!
+Temperature checks and GP votes are counted off-chain. The voting power of a user depends on their LSU holdings converted to XRD at the **start of the vote**!
 
 Users can appoints delegatees that can vote in their stead.
 # Components
 We will split data into two components:
-1. Governance component: holds all Temperature Check and RFP data. Is used to vote.
+1. Governance component: holds all Temperature Check and GP data. Is used to vote.
 2. VoteDelegation component: holds all info on delegators and delegatees.
 
 The seperation is useful, because then we can upgrade the Governance component without delegators having to assign their delegation to a delegatee again. Modularity allows for upgrading only one part.
@@ -83,7 +83,7 @@ pub struct GovernanceParameters {
   pub proposal_length_days: u16,
   pub proposal_quorum: Decimal,
   pub proposal_approval_threshold: Decimal,
-  // no proposal_propose_threshold, elevation from temp check to rfp done by multi-sig member
+  // no proposal_propose_threshold, elevation from temp check to GP done by multi-sig member
 }
 
 // struct holding component state
@@ -105,10 +105,10 @@ pub struct Governance {
 | Method | Access/Auth | Input | Output | Description |
 | ---| ---| ---| ---| --- |
 | `instantiate()` | PUBLIC | owner\_badge: `ResourceAddress`<br>metadata\_init: `MetadataInit` | component: `Global<Governance>` | Instantiates the governance component with passed owner\_badge as the owner role. |
-| `make_temperature_check()` | PUBLIC | temperature\_check: `TemperatureCheckDraft` | id: `u64` | Create a temperature check with passed `TemperatureCheck` data, this is basically a proposal you think will pass (and doesn't need changes). This is only done after completing the RFC phase (which happens off-ledger).<br><br>People vote on whether they want this temperature check to be elevated to a "real" proposal (RFP) |
-| `make_proposal()` | OWNER | temperature\_check\_id: `u64` | id: `u64` | Elevate a temperature check to a "real" proposal (RFP). This needs admin power as to not spam the "real proposal" section.<br><br>People vote on the outcome of the proposal. |
-| `vote_on_temperature_check()` | PUBLIC<br>(checks passed account is present) | account: `Global<Account>`<br>temperature\_check\_id: `u64`<br>vote: `TemperatureCheckVote` | \- | Vote on whether you want a temp check to be elevated to an RFP.<br><br>You cannot change your vote midway. |
-| `vote_on_proposal()` | PUBLIC<br>(checks passed account is present) | account: `Global<Account>`<br>proposal\_id: `u64`<br>vote: `ProposalVoteOptionId` | \- | Vote on an RFP.<br><br>You cannot change your vote midway. |
+| `make_temperature_check()` | PUBLIC | temperature\_check: `TemperatureCheckDraft` | id: `u64` | Create a temperature check with passed `TemperatureCheck` data, this is basically a proposal you think will pass (and doesn't need changes). This is only done after completing the RFC phase (which happens off-ledger).<br><br>People vote on whether they want this temperature check to be elevated to a "real" proposal (GP) |
+| `make_proposal()` | OWNER | temperature\_check\_id: `u64` | id: `u64` | Elevate a temperature check to a "real" proposal (GP). This needs admin power as to not spam the "real proposal" section.<br><br>People vote on the outcome of the proposal. |
+| `vote_on_temperature_check()` | PUBLIC<br>(checks passed account is present) | account: `Global<Account>`<br>temperature\_check\_id: `u64`<br>vote: `TemperatureCheckVote` | \- | Vote on whether you want a temp check to be elevated to an GP.<br><br>You cannot change your vote midway. |
+| `vote_on_proposal()` | PUBLIC<br>(checks passed account is present) | account: `Global<Account>`<br>proposal\_id: `u64`<br>vote: `ProposalVoteOptionId` | \- | Vote on an GP.<br><br>You cannot change your vote midway. |
 
 ## VoteDelegation component
 ### Key Structs
