@@ -8,7 +8,7 @@ Governance happens in a 3-part procedure:
 
 1. **Request for Comment (RFC)**: A draft proposal posted off-chain (e.g., [RadixTalk](https://radixtalk.com))
 2. **Temperature Check**: Pushing proposal details on-chain and voting on whether it merits a full vote
-3. **Request for Proposal (RFP)**: A passed temperature check becomes a formal proposal for community voting
+3. **Governance Proposal (GP)**: A passed temperature check becomes a formal proposal for community voting
 
 Vote counting happens off-chain. Voting power is determined by LSU holdings converted to XRD at the **start of the vote**. Users can delegate their voting power to others.
 
@@ -164,7 +164,3 @@ Delegation {
     valid_until: Instant,
 }
 ```
-
-## License
-
-MIT
