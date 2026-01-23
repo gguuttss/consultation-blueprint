@@ -1,4 +1,4 @@
-use scrypto::prelude::{Global, Account, Url};
+use scrypto::prelude::Url;
 use scrypto_test::prelude::*;
 use consultation_blueprint::*;
 
@@ -41,7 +41,6 @@ fn create_governance_parameters() -> GovernanceParameters {
         temperature_check_days: 7,
         temperature_check_quorum: dec!(1000),
         temperature_check_approval_threshold: dec!("0.5"),
-        temperature_check_propose_threshold: dec!(100),
         proposal_length_days: 14,
         proposal_quorum: dec!(5000),
         proposal_approval_threshold: dec!("0.5"),
@@ -64,6 +63,31 @@ fn create_temp_check_draft() -> TemperatureCheckDraft {
         ],
         attachments: vec![],
         rfc_url: Url::of("https://radixtalk.com/proposal/123"),
+        max_selections: None, // Single choice
+    }
+}
+
+fn create_multi_choice_temp_check_draft() -> TemperatureCheckDraft {
+    TemperatureCheckDraft {
+        title: "Multi-Choice Test Proposal".to_string(),
+        description: "A test proposal with multiple choice voting".to_string(),
+        vote_options: vec![
+            ProposalVoteOption {
+                id: ProposalVoteOptionId(0),
+                label: "Option A".to_string(),
+            },
+            ProposalVoteOption {
+                id: ProposalVoteOptionId(1),
+                label: "Option B".to_string(),
+            },
+            ProposalVoteOption {
+                id: ProposalVoteOptionId(2),
+                label: "Option C".to_string(),
+            },
+        ],
+        attachments: vec![],
+        rfc_url: Url::of("https://radixtalk.com/proposal/456"),
+        max_selections: Some(2), // Can select up to 2 options
     }
 }
 
@@ -591,4 +615,294 @@ fn test_cannot_delegate_to_self() {
         vec![NonFungibleGlobalId::from_public_key(&delegator_pk)],
     );
     receipt.expect_commit_failure();
+}
+
+// =============================================================================
+// Multiple Choice Voting Tests
+// =============================================================================
+
+#[test]
+fn test_multi_choice_proposal_voting() {
+    let mut ledger = LedgerSimulatorBuilder::new().build();
+    let package_address = ledger.compile_and_publish(this_package!());
+    let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
+    let params = create_governance_parameters();
+
+    // Create voter account
+    let (voter_pk, _voter_sk, voter_account) = ledger.new_allocated_account();
+
+    // Instantiate governance
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_function(
+            package_address,
+            "Governance",
+            "instantiate",
+            manifest_args!(owner_badge, params),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(manifest, vec![]);
+    let governance_component = receipt.expect_commit(true).new_component_addresses()[0];
+
+    // Create multi-choice temperature check
+    let draft = create_multi_choice_temp_check_draft();
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            governance_component,
+            "make_temperature_check",
+            manifest_args!(draft),
+        )
+        .build();
+
+    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+
+    // Elevate to proposal
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .create_proof_from_account_of_amount(owner_account, owner_badge, dec!(1))
+        .call_method(
+            governance_component,
+            "make_proposal",
+            manifest_args!(0u64),
+        )
+        .build();
+
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&owner_pk)],
+        )
+        .expect_commit_success();
+
+    // Vote with multiple selections (should succeed - selecting 2 options, max is 2)
+    let votes: Vec<ProposalVoteOptionId> = vec![ProposalVoteOptionId(0), ProposalVoteOptionId(1)];
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            governance_component,
+            "vote_on_proposal",
+            manifest_args!(voter_account, 0u64, votes),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&voter_pk)],
+    );
+    receipt.expect_commit_success();
+}
+
+#[test]
+fn test_multi_choice_exceeds_max_selections() {
+    let mut ledger = LedgerSimulatorBuilder::new().build();
+    let package_address = ledger.compile_and_publish(this_package!());
+    let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
+    let params = create_governance_parameters();
+
+    // Create voter account
+    let (voter_pk, _voter_sk, voter_account) = ledger.new_allocated_account();
+
+    // Instantiate governance
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_function(
+            package_address,
+            "Governance",
+            "instantiate",
+            manifest_args!(owner_badge, params),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(manifest, vec![]);
+    let governance_component = receipt.expect_commit(true).new_component_addresses()[0];
+
+    // Create multi-choice temperature check (max 2 selections)
+    let draft = create_multi_choice_temp_check_draft();
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            governance_component,
+            "make_temperature_check",
+            manifest_args!(draft),
+        )
+        .build();
+
+    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+
+    // Elevate to proposal
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .create_proof_from_account_of_amount(owner_account, owner_badge, dec!(1))
+        .call_method(
+            governance_component,
+            "make_proposal",
+            manifest_args!(0u64),
+        )
+        .build();
+
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&owner_pk)],
+        )
+        .expect_commit_success();
+
+    // Try to vote with 3 selections (should fail - max is 2)
+    let votes: Vec<ProposalVoteOptionId> = vec![
+        ProposalVoteOptionId(0),
+        ProposalVoteOptionId(1),
+        ProposalVoteOptionId(2),
+    ];
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            governance_component,
+            "vote_on_proposal",
+            manifest_args!(voter_account, 0u64, votes),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&voter_pk)],
+    );
+    receipt.expect_commit_failure();
+}
+
+#[test]
+fn test_single_choice_requires_exactly_one_vote() {
+    let mut ledger = LedgerSimulatorBuilder::new().build();
+    let package_address = ledger.compile_and_publish(this_package!());
+    let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
+    let params = create_governance_parameters();
+
+    // Create voter account
+    let (voter_pk, _voter_sk, voter_account) = ledger.new_allocated_account();
+
+    // Instantiate governance
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_function(
+            package_address,
+            "Governance",
+            "instantiate",
+            manifest_args!(owner_badge, params),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(manifest, vec![]);
+    let governance_component = receipt.expect_commit(true).new_component_addresses()[0];
+
+    // Create single-choice temperature check (max_selections = None)
+    let draft = create_temp_check_draft();
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            governance_component,
+            "make_temperature_check",
+            manifest_args!(draft),
+        )
+        .build();
+
+    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+
+    // Elevate to proposal
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .create_proof_from_account_of_amount(owner_account, owner_badge, dec!(1))
+        .call_method(
+            governance_component,
+            "make_proposal",
+            manifest_args!(0u64),
+        )
+        .build();
+
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&owner_pk)],
+        )
+        .expect_commit_success();
+
+    // Try to vote with 2 selections (should fail - single choice)
+    let votes: Vec<ProposalVoteOptionId> = vec![ProposalVoteOptionId(0), ProposalVoteOptionId(1)];
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            governance_component,
+            "vote_on_proposal",
+            manifest_args!(voter_account, 0u64, votes),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&voter_pk)],
+    );
+    receipt.expect_commit_failure();
+}
+
+// =============================================================================
+// Delegation Constraint Tests
+// =============================================================================
+
+#[test]
+fn test_delegation_minimum_fraction() {
+    let mut ledger = LedgerSimulatorBuilder::new().build();
+    let (owner_badge, _owner_account, _owner_pk) = create_owner_badge_with_account(&mut ledger);
+    let package_address = ledger.compile_and_publish(this_package!());
+
+    // Create delegator and delegatee accounts
+    let (delegator_pk, _delegator_sk, delegator_account) = ledger.new_allocated_account();
+    let (_delegatee_pk, _delegatee_sk, delegatee_account) = ledger.new_allocated_account();
+
+    // Instantiate vote delegation
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_function(
+            package_address,
+            "VoteDelegation",
+            "instantiate",
+            manifest_args!(owner_badge),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(manifest, vec![]);
+    let delegation_component = receipt.expect_commit(true).new_component_addresses()[0];
+
+    let valid_until = Instant::new(i64::MAX / 2);
+
+    // Try to delegate less than minimum (0.005 < 0.01)
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            delegation_component,
+            "make_delegation",
+            manifest_args!(delegator_account, delegatee_account, dec!("0.005"), valid_until),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&delegator_pk)],
+    );
+    receipt.expect_commit_failure();
+
+    // Delegation at exactly minimum should succeed (0.01)
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            delegation_component,
+            "make_delegation",
+            manifest_args!(delegator_account, delegatee_account, dec!("0.01"), valid_until),
+        )
+        .build();
+
+    let receipt = ledger.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&delegator_pk)],
+    );
+    receipt.expect_commit_success();
 }

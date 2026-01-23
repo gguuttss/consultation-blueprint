@@ -1,5 +1,5 @@
 use scrypto::prelude::*;
-use crate::Delegation;
+use crate::{Delegation, MAX_DELEGATIONS, MIN_DELEGATION_FRACTION};
 
 #[blueprint]
 mod vote_delegation {
@@ -55,10 +55,12 @@ mod vote_delegation {
             // Verify the delegator is present in the transaction
             Runtime::assert_access_rule(delegator.get_owner_role().rule);
 
-            // Validate inputs
+            // Validate minimum fraction
+            let min_fraction = Decimal::try_from(MIN_DELEGATION_FRACTION).unwrap();
             assert!(
-                fraction > Decimal::ZERO && fraction <= Decimal::ONE,
-                "Fraction must be between 0 (exclusive) and 1 (inclusive)"
+                fraction >= min_fraction && fraction <= Decimal::ONE,
+                "Fraction must be between {} and 1 (inclusive)",
+                MIN_DELEGATION_FRACTION
             );
             assert!(
                 delegator != delegatee,
@@ -71,24 +73,37 @@ mod vote_delegation {
                 "Delegation must be valid for some time in the future"
             );
 
-            // Check total delegation doesn't exceed 100%
+            // Clean up expired delegations and calculate totals
             let mut total_delegated = Decimal::ZERO;
+            let mut valid_delegations: Vec<Delegation> = Vec::new();
+            let mut expired_delegatees: Vec<Global<Account>> = Vec::new();
+
             if let Some(existing_delegations) = self.delegators.get(&delegator) {
                 for delegation in existing_delegations.iter() {
-                    // Only count delegations that are still valid
                     if delegation.valid_until.compare(now, TimeComparisonOperator::Gt) {
-                        // Check if we're updating an existing delegation to the same delegatee
-                        if delegation.delegatee == delegatee {
-                            // This is an update, don't count the old one
-                            continue;
+                        // Still valid - skip if updating existing delegation to same delegatee
+                        if delegation.delegatee != delegatee {
+                            total_delegated = total_delegated + delegation.fraction;
+                            valid_delegations.push(delegation.clone());
                         }
-                        total_delegated = total_delegated + delegation.fraction;
+                    } else {
+                        // Expired - track for cleanup from delegatees KVS
+                        expired_delegatees.push(delegation.delegatee);
                     }
                 }
             }
+
             assert!(
                 total_delegated + fraction <= Decimal::ONE,
                 "Total delegation cannot exceed 100%"
+            );
+
+            // Check max delegations (counting the new one)
+            let final_count = valid_delegations.len() + 1;
+            assert!(
+                final_count <= MAX_DELEGATIONS,
+                "Cannot have more than {} delegations",
+                MAX_DELEGATIONS
             );
 
             // Create the new delegation
@@ -97,29 +112,36 @@ mod vote_delegation {
                 fraction,
                 valid_until,
             };
+            valid_delegations.push(new_delegation);
 
-            // Update delegators map
+            // Update delegators map with cleaned-up list
             let has_existing = self.delegators.get(&delegator).is_some();
             if has_existing {
                 let mut delegations = self.delegators.get_mut(&delegator).unwrap();
-                // Remove any existing delegation to the same delegatee
-                delegations.retain(|d| d.delegatee != delegatee);
-                delegations.push(new_delegation);
+                *delegations = valid_delegations;
             } else {
-                self.delegators.insert(delegator, vec![new_delegation]);
+                self.delegators.insert(delegator, valid_delegations);
             }
 
-            // Update delegatees map
+            // Clean up expired delegations from delegatees KVS
+            for expired_delegatee in expired_delegatees {
+                if let Some(delegatee_map) = self.delegatees.get(&expired_delegatee) {
+                    delegatee_map.remove(&delegator);
+                }
+            }
+
+            // Update delegatees map for the new/updated delegation
             let delegatee_exists = self.delegatees.get(&delegatee).is_some();
             if !delegatee_exists {
                 self.delegatees.insert(delegatee, KeyValueStore::new());
             }
-            let mut delegatee_map = self.delegatees.get_mut(&delegatee).unwrap();
+            let delegatee_map = self.delegatees.get(&delegatee).unwrap();
             delegatee_map.insert(delegator, fraction);
         }
 
         /// Remove a delegation from delegator to delegatee
         /// The delegator must prove their presence
+        /// Also cleans up any expired delegations
         pub fn remove_delegation(
             &mut self,
             delegator: Global<Account>,
@@ -128,20 +150,44 @@ mod vote_delegation {
             // Verify the delegator is present in the transaction
             Runtime::assert_access_rule(delegator.get_owner_role().rule);
 
-            // Remove from delegators map
-            if let Some(mut delegations) = self.delegators.get_mut(&delegator) {
-                let initial_len = delegations.len();
-                delegations.retain(|d| d.delegatee != delegatee);
-                assert!(
-                    delegations.len() < initial_len,
-                    "No delegation found to the specified delegatee"
-                );
+            let now = Clock::current_time_rounded_to_seconds();
+            let mut found_target = false;
+            let mut valid_delegations: Vec<Delegation> = Vec::new();
+            let mut expired_delegatees: Vec<Global<Account>> = Vec::new();
+
+            // Process delegations, keeping valid ones except the target
+            if let Some(existing_delegations) = self.delegators.get(&delegator) {
+                for delegation in existing_delegations.iter() {
+                    if delegation.delegatee == delegatee {
+                        found_target = true;
+                        // Don't add to valid_delegations (removing it)
+                    } else if delegation.valid_until.compare(now, TimeComparisonOperator::Gt) {
+                        // Still valid and not the target
+                        valid_delegations.push(delegation.clone());
+                    } else {
+                        // Expired - track for cleanup from delegatees KVS
+                        expired_delegatees.push(delegation.delegatee);
+                    }
+                }
             } else {
                 panic!("No delegations found for this account");
             }
 
-            // Remove from delegatees map
-            if let Some(mut delegatee_map) = self.delegatees.get_mut(&delegatee) {
+            assert!(found_target, "No delegation found to the specified delegatee");
+
+            // Update delegators map with cleaned-up list
+            let mut delegations = self.delegators.get_mut(&delegator).unwrap();
+            *delegations = valid_delegations;
+
+            // Clean up expired delegations from delegatees KVS
+            for expired_delegatee in expired_delegatees {
+                if let Some(delegatee_map) = self.delegatees.get(&expired_delegatee) {
+                    delegatee_map.remove(&delegator);
+                }
+            }
+
+            // Remove the target delegation from delegatees map
+            if let Some(delegatee_map) = self.delegatees.get(&delegatee) {
                 delegatee_map.remove(&delegator);
             }
         }

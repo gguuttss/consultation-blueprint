@@ -1,7 +1,8 @@
 use scrypto::prelude::*;
 use crate::{
-    File, GovernanceParameters, Proposal, ProposalVoteOption, ProposalVoteOptionId,
-    TemperatureCheck, TemperatureCheckDraft, TemperatureCheckVote, MAX_ATTACHMENTS, MAX_VOTE_OPTIONS,
+    GovernanceParameters, Proposal, ProposalVoteOptionId,
+    TemperatureCheck, TemperatureCheckDraft, TemperatureCheckVote,
+    MAX_ATTACHMENTS, MAX_VOTE_OPTIONS, MAX_SELECTIONS,
 };
 
 #[blueprint]
@@ -82,6 +83,16 @@ mod governance {
                 MAX_ATTACHMENTS
             );
 
+            // Validate max_selections
+            if let Some(n) = draft.max_selections {
+                assert!(n > 0, "max_selections must be greater than 0");
+                assert!(n <= MAX_SELECTIONS, "max_selections cannot exceed {}", MAX_SELECTIONS);
+                assert!(
+                    (n as usize) <= draft.vote_options.len(),
+                    "max_selections cannot exceed number of vote options"
+                );
+            }
+
             let id = self.temperature_check_count;
             self.temperature_check_count += 1;
 
@@ -95,6 +106,7 @@ mod governance {
                 attachments: draft.attachments,
                 rfc_url: draft.rfc_url,
                 quorum: self.governance_parameters.temperature_check_quorum,
+                max_selections: draft.max_selections,
                 votes: KeyValueStore::new(),
                 approval_threshold: self.governance_parameters.temperature_check_approval_threshold,
                 start: now,
@@ -107,8 +119,12 @@ mod governance {
             id
         }
 
-        /// Elevates a temperature check to a proposal (RFP)
+        /// Elevates a temperature check to a proposal (GP - Governance Proposal)
         /// Only callable by the owner
+        ///
+        /// # Arguments
+        /// * `temperature_check_id` - The ID of the temperature check to elevate
+        ///
         /// Returns the ID of the created proposal
         pub fn make_proposal(&mut self, temperature_check_id: u64) -> u64 {
             // Get the temperature check
@@ -135,6 +151,7 @@ mod governance {
                 attachments: tc.attachments.clone(),
                 rfc_url: tc.rfc_url.clone(),
                 quorum: self.governance_parameters.proposal_quorum,
+                max_selections: tc.max_selections,
                 votes: KeyValueStore::new(),
                 approval_threshold: self.governance_parameters.proposal_approval_threshold,
                 start: now,
@@ -162,9 +179,9 @@ mod governance {
             Runtime::assert_access_rule(account.get_owner_role().rule);
 
             // Get the temperature check
-            let mut tc = self
+            let tc = self
                 .temperature_checks
-                .get_mut(&temperature_check_id)
+                .get(&temperature_check_id)
                 .expect("Temperature check not found");
 
             // Check the vote is still open
@@ -190,19 +207,26 @@ mod governance {
 
         /// Vote on a proposal
         /// The account must prove its presence
+        ///
+        /// # Arguments
+        /// * `account` - The account casting the vote
+        /// * `proposal_id` - The ID of the proposal to vote on
+        /// * `votes` - The selected option(s):
+        ///   - For single-choice proposals: provide exactly one option
+        ///   - For multiple-choice proposals: provide up to max_selections options
         pub fn vote_on_proposal(
             &mut self,
             account: Global<Account>,
             proposal_id: u64,
-            vote: ProposalVoteOptionId,
+            votes: Vec<ProposalVoteOptionId>,
         ) {
             // Verify the account is present in the transaction
             Runtime::assert_access_rule(account.get_owner_role().rule);
 
             // Get the proposal
-            let mut proposal = self
+            let proposal = self
                 .proposals
-                .get_mut(&proposal_id)
+                .get(&proposal_id)
                 .expect("Proposal not found");
 
             // Check the vote is still open
@@ -216,11 +240,44 @@ mod governance {
                 "Voting has ended"
             );
 
-            // Validate the vote option exists
-            assert!(
-                proposal.vote_options.iter().any(|opt| opt.id == vote),
-                "Invalid vote option"
-            );
+            // Validate vote count based on max_selections
+            assert!(!votes.is_empty(), "Must select at least one option");
+
+            match proposal.max_selections {
+                None => {
+                    // Single choice: exactly one vote
+                    assert!(
+                        votes.len() == 1,
+                        "This is a single-choice proposal, select exactly one option"
+                    );
+                }
+                Some(max) => {
+                    // Multiple choice: up to max votes
+                    assert!(
+                        votes.len() <= max as usize,
+                        "Cannot select more than {} options",
+                        max
+                    );
+                }
+            }
+
+            // Check for duplicate selections
+            let mut seen = Vec::new();
+            for vote in &votes {
+                assert!(
+                    !seen.contains(vote),
+                    "Duplicate vote option selected"
+                );
+                seen.push(*vote);
+            }
+
+            // Validate all vote options exist
+            for vote in &votes {
+                assert!(
+                    proposal.vote_options.iter().any(|opt| opt.id == *vote),
+                    "Invalid vote option"
+                );
+            }
 
             // Check the account has not already voted
             assert!(
@@ -228,8 +285,8 @@ mod governance {
                 "Account has already voted on this proposal"
             );
 
-            // Record the vote
-            proposal.votes.insert(account, vote);
+            // Record the votes
+            proposal.votes.insert(account, votes);
         }
 
         /// Returns the current governance parameters

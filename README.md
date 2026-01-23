@@ -53,7 +53,6 @@ GovernanceParameters {
     temperature_check_days: u16,              // Duration of temp check voting
     temperature_check_quorum: Decimal,        // Min XRD for valid result
     temperature_check_approval_threshold: Decimal, // Fraction needed to pass
-    temperature_check_propose_threshold: Decimal,  // XRD needed to create temp check
     proposal_length_days: u16,                // Duration of proposal voting
     proposal_quorum: Decimal,                 // Min XRD for valid result
     proposal_approval_threshold: Decimal,     // Fraction needed to pass

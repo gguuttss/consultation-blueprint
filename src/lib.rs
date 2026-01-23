@@ -37,6 +37,21 @@ pub struct ProposalVoteOption {
 pub const MAX_ATTACHMENTS: usize = 10;
 /// Maximum number of vote options per proposal
 pub const MAX_VOTE_OPTIONS: usize = 10;
+/// Maximum number of selections in a multiple-choice vote
+pub const MAX_SELECTIONS: u32 = 5;
+
+// =============================================================================
+// Delegation Constants
+// =============================================================================
+
+/// Maximum number of delegations a single account can have
+pub const MAX_DELEGATIONS: usize = 50;
+/// Minimum delegation fraction (1% = 0.01)
+pub const MIN_DELEGATION_FRACTION: &str = "0.01";
+
+// =============================================================================
+// Governance Types
+// =============================================================================
 
 /// Input data for creating a temperature check
 #[derive(ScryptoSbor, ManifestSbor, Clone, Debug)]
@@ -46,6 +61,10 @@ pub struct TemperatureCheckDraft {
     pub vote_options: Vec<ProposalVoteOption>,
     pub attachments: Vec<File>,
     pub rfc_url: Url,
+    /// Maximum number of options a voter can select in the proposal.
+    /// If None, only one option can be selected (single choice).
+    /// If Some(n), up to n options can be selected (multiple choice).
+    pub max_selections: Option<u32>,
 }
 
 /// Governance parameters that control voting behavior
@@ -54,7 +73,6 @@ pub struct GovernanceParameters {
     pub temperature_check_days: u16,
     pub temperature_check_quorum: Decimal,
     pub temperature_check_approval_threshold: Decimal,
-    pub temperature_check_propose_threshold: Decimal,
     pub proposal_length_days: u16,
     pub proposal_quorum: Decimal,
     pub proposal_approval_threshold: Decimal,
@@ -69,6 +87,10 @@ pub struct TemperatureCheck {
     pub attachments: Vec<File>,
     pub rfc_url: Url,
     pub quorum: Decimal,
+    /// Maximum number of options a voter can select in the proposal.
+    /// If None, only one option can be selected (single choice).
+    /// If Some(n), up to n options can be selected (multiple choice).
+    pub max_selections: Option<u32>,
     pub votes: KeyValueStore<Global<Account>, TemperatureCheckVote>,
     pub approval_threshold: Decimal,
     pub start: Instant,
@@ -76,7 +98,7 @@ pub struct TemperatureCheck {
     pub elevated_proposal_id: Option<u64>,
 }
 
-/// Struct for a proposal (RFP)
+/// Struct for a proposal (GP - Governance Proposal)
 #[derive(ScryptoSbor)]
 pub struct Proposal {
     pub title: String,
@@ -85,12 +107,21 @@ pub struct Proposal {
     pub attachments: Vec<File>,
     pub rfc_url: Url,
     pub quorum: Decimal,
-    pub votes: KeyValueStore<Global<Account>, ProposalVoteOptionId>,
+    /// Maximum number of options a voter can select.
+    /// If None, only one option can be selected (single choice).
+    /// If Some(n), up to n options can be selected (multiple choice).
+    pub max_selections: Option<u32>,
+    /// Stores selected option IDs for each voter
+    pub votes: KeyValueStore<Global<Account>, Vec<ProposalVoteOptionId>>,
     pub approval_threshold: Decimal,
     pub start: Instant,
     pub deadline: Instant,
     pub temperature_check_id: u64,
 }
+
+// =============================================================================
+// Delegation Types
+// =============================================================================
 
 /// Represents a delegation from one account to another
 #[derive(ScryptoSbor, Clone, Debug)]
