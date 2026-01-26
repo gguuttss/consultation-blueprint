@@ -130,3 +130,64 @@ pub struct Delegation {
     pub fraction: Decimal,
     pub valid_until: Instant,
 }
+
+// =============================================================================
+// Events
+// =============================================================================
+
+/// Emitted when a temperature check is created
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct TemperatureCheckCreatedEvent {
+    pub temperature_check_id: u64,
+    pub title: String,
+    pub start: Instant,
+    pub deadline: Instant,
+}
+
+/// Emitted when a vote is cast on a temperature check
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct TemperatureCheckVotedEvent {
+    pub temperature_check_id: u64,
+    pub account: Global<Account>,
+    pub vote: TemperatureCheckVote,
+}
+
+/// Emitted when a temperature check is elevated to a proposal
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct ProposalCreatedEvent {
+    pub proposal_id: u64,
+    pub temperature_check_id: u64,
+    pub title: String,
+    pub start: Instant,
+    pub deadline: Instant,
+}
+
+/// Emitted when a vote is cast on a proposal
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct ProposalVotedEvent {
+    pub proposal_id: u64,
+    pub account: Global<Account>,
+    pub votes: Vec<ProposalVoteOptionId>,
+}
+
+/// Emitted when governance parameters are updated
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct GovernanceParametersUpdatedEvent {
+    pub new_params: GovernanceParameters,
+}
+
+/// Emitted when a delegation is created or updated
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct DelegationCreatedEvent {
+    pub delegator: Global<Account>,
+    pub delegatee: Global<Account>,
+    pub fraction: Decimal,
+    pub valid_until: Instant,
+}
+
+/// Emitted when a delegation is removed
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct DelegationRemovedEvent {
+    pub delegator: Global<Account>,
+    pub delegatee: Global<Account>,
+}

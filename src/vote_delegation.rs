@@ -1,5 +1,8 @@
 use scrypto::prelude::*;
-use crate::{Delegation, MAX_DELEGATIONS, MIN_DELEGATION_FRACTION};
+use crate::{
+    Delegation, DelegationCreatedEvent, DelegationRemovedEvent,
+    MAX_DELEGATIONS, MIN_DELEGATION_FRACTION,
+};
 
 #[blueprint]
 mod vote_delegation {
@@ -137,6 +140,13 @@ mod vote_delegation {
             }
             let delegatee_map = self.delegatees.get(&delegatee).unwrap();
             delegatee_map.insert(delegator, fraction);
+
+            Runtime::emit_event(DelegationCreatedEvent {
+                delegator,
+                delegatee,
+                fraction,
+                valid_until,
+            });
         }
 
         /// Remove a delegation from delegator to delegatee
@@ -190,6 +200,11 @@ mod vote_delegation {
             if let Some(delegatee_map) = self.delegatees.get(&delegatee) {
                 delegatee_map.remove(&delegator);
             }
+
+            Runtime::emit_event(DelegationRemovedEvent {
+                delegator,
+                delegatee,
+            });
         }
 
         /// Get all delegations made by a delegator

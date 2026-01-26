@@ -2,6 +2,8 @@ use scrypto::prelude::*;
 use crate::{
     GovernanceParameters, Proposal, ProposalVoteOptionId,
     TemperatureCheck, TemperatureCheckDraft, TemperatureCheckVote,
+    TemperatureCheckCreatedEvent, TemperatureCheckVotedEvent,
+    ProposalCreatedEvent, ProposalVotedEvent, GovernanceParametersUpdatedEvent,
     MAX_ATTACHMENTS, MAX_VOTE_OPTIONS, MAX_SELECTIONS,
 };
 
@@ -83,6 +85,17 @@ mod governance {
                 MAX_ATTACHMENTS
             );
 
+            // Validate vote option IDs are unique
+            let mut seen_ids: Vec<ProposalVoteOptionId> = Vec::new();
+            for option in &draft.vote_options {
+                assert!(
+                    !seen_ids.contains(&option.id),
+                    "Duplicate vote option ID: {}",
+                    option.id.0
+                );
+                seen_ids.push(option.id);
+            }
+
             // Validate max_selections
             if let Some(n) = draft.max_selections {
                 assert!(n > 0, "max_selections must be greater than 0");
@@ -114,7 +127,18 @@ mod governance {
                 elevated_proposal_id: None,
             };
 
+            let title = temperature_check.title.clone();
+            let start = temperature_check.start;
+            let deadline = temperature_check.deadline;
+
             self.temperature_checks.insert(id, temperature_check);
+
+            Runtime::emit_event(TemperatureCheckCreatedEvent {
+                temperature_check_id: id,
+                title,
+                start,
+                deadline,
+            });
 
             id
         }
@@ -162,7 +186,19 @@ mod governance {
             tc.elevated_proposal_id = Some(proposal_id);
             drop(tc);
 
+            let title = proposal.title.clone();
+            let start = proposal.start;
+            let deadline = proposal.deadline;
+
             self.proposals.insert(proposal_id, proposal);
+
+            Runtime::emit_event(ProposalCreatedEvent {
+                proposal_id,
+                temperature_check_id,
+                title,
+                start,
+                deadline,
+            });
 
             proposal_id
         }
@@ -203,6 +239,12 @@ mod governance {
 
             // Record the vote
             tc.votes.insert(account, vote);
+
+            Runtime::emit_event(TemperatureCheckVotedEvent {
+                temperature_check_id,
+                account,
+                vote,
+            });
         }
 
         /// Vote on a proposal
@@ -286,7 +328,13 @@ mod governance {
             );
 
             // Record the votes
-            proposal.votes.insert(account, votes);
+            proposal.votes.insert(account, votes.clone());
+
+            Runtime::emit_event(ProposalVotedEvent {
+                proposal_id,
+                account,
+                votes,
+            });
         }
 
         /// Returns the current governance parameters
@@ -306,7 +354,9 @@ mod governance {
 
         /// Updates the governance parameters (owner only)
         pub fn update_governance_parameters(&mut self, new_params: GovernanceParameters) {
-            self.governance_parameters = new_params;
+            self.governance_parameters = new_params.clone();
+
+            Runtime::emit_event(GovernanceParametersUpdatedEvent { new_params });
         }
     }
 }
