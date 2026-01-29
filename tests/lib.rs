@@ -50,19 +50,19 @@ fn create_governance_parameters() -> GovernanceParameters {
 fn create_temp_check_draft() -> TemperatureCheckDraft {
     TemperatureCheckDraft {
         title: "Test Proposal".to_string(),
-        description: "A test proposal description".to_string(),
+        short_description: "A short summary of the test proposal".to_string(),
+        description: "# Test Proposal\n\nA full markdown description of the test proposal.".to_string(),
         vote_options: vec![
-            ProposalVoteOption {
-                id: ProposalVoteOptionId(0),
+            ProposalVoteOptionInput {
                 label: "For".to_string(),
+                color: VoteOptionColor::Green,
             },
-            ProposalVoteOption {
-                id: ProposalVoteOptionId(1),
+            ProposalVoteOptionInput {
                 label: "Against".to_string(),
+                color: VoteOptionColor::Red,
             },
         ],
-        attachments: vec![],
-        rfc_url: Url::of("https://radixtalk.com/proposal/123"),
+        links: vec![Url::of("https://radixtalk.com/proposal/123")],
         max_selections: None, // Single choice
     }
 }
@@ -70,23 +70,23 @@ fn create_temp_check_draft() -> TemperatureCheckDraft {
 fn create_multi_choice_temp_check_draft() -> TemperatureCheckDraft {
     TemperatureCheckDraft {
         title: "Multi-Choice Test Proposal".to_string(),
-        description: "A test proposal with multiple choice voting".to_string(),
+        short_description: "A short summary of the multi-choice proposal".to_string(),
+        description: "# Multi-Choice Proposal\n\nA full markdown description with multiple choice voting.".to_string(),
         vote_options: vec![
-            ProposalVoteOption {
-                id: ProposalVoteOptionId(0),
+            ProposalVoteOptionInput {
                 label: "Option A".to_string(),
+                color: VoteOptionColor::Blue,
             },
-            ProposalVoteOption {
-                id: ProposalVoteOptionId(1),
+            ProposalVoteOptionInput {
                 label: "Option B".to_string(),
+                color: VoteOptionColor::Green,
             },
-            ProposalVoteOption {
-                id: ProposalVoteOptionId(2),
+            ProposalVoteOptionInput {
                 label: "Option C".to_string(),
+                color: VoteOptionColor::Yellow,
             },
         ],
-        attachments: vec![],
-        rfc_url: Url::of("https://radixtalk.com/proposal/456"),
+        links: vec![Url::of("https://radixtalk.com/proposal/456")],
         max_selections: Some(2), // Can select up to 2 options
     }
 }
@@ -122,6 +122,9 @@ fn test_make_temperature_check() {
     let params = create_governance_parameters();
     let package_address = ledger.compile_and_publish(this_package!());
 
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
+
     // Instantiate governance
     let manifest = ManifestBuilder::new()
         .lock_fee_from_faucet()
@@ -144,11 +147,14 @@ fn test_make_temperature_check() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    let receipt = ledger.execute_manifest(manifest, vec![]);
+    let receipt = ledger.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+    );
     receipt.expect_commit_success();
 
     // Verify counter increased
@@ -172,6 +178,9 @@ fn test_vote_on_temperature_check() {
     let (owner_badge, _owner_account, _owner_pk) = create_owner_badge_with_account(&mut ledger);
     let params = create_governance_parameters();
     let package_address = ledger.compile_and_publish(this_package!());
+
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
 
     // Create voter account
     let (public_key, _private_key, account) = ledger.new_allocated_account();
@@ -197,11 +206,16 @@ fn test_vote_on_temperature_check() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+        )
+        .expect_commit_success();
 
     // Vote on temperature check
     let manifest = ManifestBuilder::new()
@@ -227,6 +241,9 @@ fn test_cannot_vote_twice_on_temperature_check() {
     let params = create_governance_parameters();
     let package_address = ledger.compile_and_publish(this_package!());
 
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
+
     // Create voter account
     let (public_key, _private_key, account) = ledger.new_allocated_account();
 
@@ -251,11 +268,16 @@ fn test_cannot_vote_twice_on_temperature_check() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+        )
+        .expect_commit_success();
 
     // First vote should succeed
     let manifest = ManifestBuilder::new()
@@ -297,8 +319,11 @@ fn test_make_proposal_from_temperature_check() {
     let package_address = ledger.compile_and_publish(this_package!());
 
     // Create owner account with badge
-    let (owner_badge, owner_account, public_key) = create_owner_badge_with_account(&mut ledger);
+    let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
     let params = create_governance_parameters();
+
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
 
     // Instantiate governance
     let manifest = ManifestBuilder::new()
@@ -321,11 +346,16 @@ fn test_make_proposal_from_temperature_check() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+        )
+        .expect_commit_success();
 
     // Elevate to proposal (requires owner badge proof for auth)
     let manifest = ManifestBuilder::new()
@@ -340,7 +370,7 @@ fn test_make_proposal_from_temperature_check() {
 
     let receipt = ledger.execute_manifest(
         manifest,
-        vec![NonFungibleGlobalId::from_public_key(&public_key)],
+        vec![NonFungibleGlobalId::from_public_key(&owner_pk)],
     );
     receipt.expect_commit_success();
 
@@ -628,6 +658,9 @@ fn test_multi_choice_proposal_voting() {
     let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
     let params = create_governance_parameters();
 
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
+
     // Create voter account
     let (voter_pk, _voter_sk, voter_account) = ledger.new_allocated_account();
 
@@ -652,11 +685,16 @@ fn test_multi_choice_proposal_voting() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+        )
+        .expect_commit_success();
 
     // Elevate to proposal
     let manifest = ManifestBuilder::new()
@@ -701,6 +739,9 @@ fn test_multi_choice_exceeds_max_selections() {
     let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
     let params = create_governance_parameters();
 
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
+
     // Create voter account
     let (voter_pk, _voter_sk, voter_account) = ledger.new_allocated_account();
 
@@ -725,11 +766,16 @@ fn test_multi_choice_exceeds_max_selections() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+        )
+        .expect_commit_success();
 
     // Elevate to proposal
     let manifest = ManifestBuilder::new()
@@ -778,6 +824,9 @@ fn test_single_choice_requires_exactly_one_vote() {
     let (owner_badge, owner_account, owner_pk) = create_owner_badge_with_account(&mut ledger);
     let params = create_governance_parameters();
 
+    // Create author account
+    let (author_pk, _author_sk, author_account) = ledger.new_allocated_account();
+
     // Create voter account
     let (voter_pk, _voter_sk, voter_account) = ledger.new_allocated_account();
 
@@ -802,11 +851,16 @@ fn test_single_choice_requires_exactly_one_vote() {
         .call_method(
             governance_component,
             "make_temperature_check",
-            manifest_args!(draft),
+            manifest_args!(author_account, draft),
         )
         .build();
 
-    ledger.execute_manifest(manifest, vec![]).expect_commit_success();
+    ledger
+        .execute_manifest(
+            manifest,
+            vec![NonFungibleGlobalId::from_public_key(&author_pk)],
+        )
+        .expect_commit_success();
 
     // Elevate to proposal
     let manifest = ManifestBuilder::new()

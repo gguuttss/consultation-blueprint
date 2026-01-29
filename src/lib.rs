@@ -7,14 +7,6 @@ pub mod vote_delegation;
 // Shared Types
 // =============================================================================
 
-/// Reference to a file stored via radix-file-storage
-#[derive(ScryptoSbor, ManifestSbor, Clone, Debug)]
-pub struct File {
-    pub kvs_address: String,
-    pub component_address: ComponentAddress,
-    pub file_hash: String,
-}
-
 /// Vote option for temperature checks (simple for/against)
 #[derive(ScryptoSbor, ManifestSbor, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TemperatureCheckVote {
@@ -22,19 +14,43 @@ pub enum TemperatureCheckVote {
     Against,
 }
 
+/// Available colors for vote options
+#[derive(ScryptoSbor, ManifestSbor, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VoteOptionColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+    Pink,
+    Teal,
+    Gray,
+    Brown,
+}
+
 /// Unique identifier for a proposal vote option
 #[derive(ScryptoSbor, ManifestSbor, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProposalVoteOptionId(pub u32);
 
+/// Input for creating a vote option (user provides label and color only)
+#[derive(ScryptoSbor, ManifestSbor, Clone, Debug)]
+pub struct ProposalVoteOptionInput {
+    pub label: String,
+    pub color: VoteOptionColor,
+}
+
 /// A vote option for proposals (e.g., "For", "Against", "Abstain")
+/// The ID is auto-generated based on the order of options (0, 1, 2, ...)
 #[derive(ScryptoSbor, ManifestSbor, Clone, Debug)]
 pub struct ProposalVoteOption {
     pub id: ProposalVoteOptionId,
     pub label: String,
+    pub color: VoteOptionColor,
 }
 
-/// Maximum number of attachments per temperature check / proposal
-pub const MAX_ATTACHMENTS: usize = 10;
+/// Maximum number of links per temperature check / proposal
+pub const MAX_LINKS: usize = 10;
 /// Maximum number of vote options per proposal
 pub const MAX_VOTE_OPTIONS: usize = 10;
 /// Maximum number of selections in a multiple-choice vote
@@ -57,10 +73,14 @@ pub const MIN_DELEGATION_FRACTION: &str = "0.01";
 #[derive(ScryptoSbor, ManifestSbor, Clone, Debug)]
 pub struct TemperatureCheckDraft {
     pub title: String,
+    /// Short summary of the proposal
+    pub short_description: String,
+    /// Full description in markdown format
     pub description: String,
-    pub vote_options: Vec<ProposalVoteOption>,
-    pub attachments: Vec<File>,
-    pub rfc_url: Url,
+    /// Vote options with labels and colors (IDs are auto-generated)
+    pub vote_options: Vec<ProposalVoteOptionInput>,
+    /// External links related to the proposal
+    pub links: Vec<Url>,
     /// Maximum number of options a voter can select in the proposal.
     /// If None, only one option can be selected (single choice).
     /// If Some(n), up to n options can be selected (multiple choice).
@@ -82,10 +102,13 @@ pub struct GovernanceParameters {
 #[derive(ScryptoSbor)]
 pub struct TemperatureCheck {
     pub title: String,
+    /// Short summary of the proposal
+    pub short_description: String,
+    /// Full description in markdown format
     pub description: String,
     pub vote_options: Vec<ProposalVoteOption>,
-    pub attachments: Vec<File>,
-    pub rfc_url: Url,
+    /// External links related to the proposal
+    pub links: Vec<Url>,
     pub quorum: Decimal,
     /// Maximum number of options a voter can select in the proposal.
     /// If None, only one option can be selected (single choice).
@@ -96,16 +119,21 @@ pub struct TemperatureCheck {
     pub start: Instant,
     pub deadline: Instant,
     pub elevated_proposal_id: Option<u64>,
+    /// The account that created this temperature check
+    pub author: Global<Account>,
 }
 
 /// Struct for a proposal (GP - Governance Proposal)
 #[derive(ScryptoSbor)]
 pub struct Proposal {
     pub title: String,
+    /// Short summary of the proposal
+    pub short_description: String,
+    /// Full description in markdown format
     pub description: String,
     pub vote_options: Vec<ProposalVoteOption>,
-    pub attachments: Vec<File>,
-    pub rfc_url: Url,
+    /// External links related to the proposal
+    pub links: Vec<Url>,
     pub quorum: Decimal,
     /// Maximum number of options a voter can select.
     /// If None, only one option can be selected (single choice).
@@ -117,6 +145,8 @@ pub struct Proposal {
     pub start: Instant,
     pub deadline: Instant,
     pub temperature_check_id: u64,
+    /// The account that created the original temperature check
+    pub author: Global<Account>,
 }
 
 // =============================================================================

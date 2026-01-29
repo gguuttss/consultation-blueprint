@@ -1,13 +1,20 @@
 use scrypto::prelude::*;
 use crate::{
-    GovernanceParameters, Proposal, ProposalVoteOptionId,
-    TemperatureCheck, TemperatureCheckDraft, TemperatureCheckVote,
+    GovernanceParameters, Proposal, ProposalVoteOption, ProposalVoteOptionId,
+    TemperatureCheck, TemperatureCheckDraft, TemperatureCheckVote, VoteOptionColor,
     TemperatureCheckCreatedEvent, TemperatureCheckVotedEvent,
     ProposalCreatedEvent, ProposalVotedEvent, GovernanceParametersUpdatedEvent,
-    MAX_ATTACHMENTS, MAX_VOTE_OPTIONS, MAX_SELECTIONS,
+    MAX_LINKS, MAX_VOTE_OPTIONS, MAX_SELECTIONS,
 };
 
 #[blueprint]
+#[events(
+    TemperatureCheckCreatedEvent,
+    TemperatureCheckVotedEvent,
+    ProposalCreatedEvent,
+    ProposalVotedEvent,
+    GovernanceParametersUpdatedEvent
+)]
 mod governance {
     use super::*;
 
@@ -60,11 +67,26 @@ mod governance {
 
         /// Creates a temperature check from the draft
         /// Returns the ID of the created temperature check
-        pub fn make_temperature_check(&mut self, draft: TemperatureCheckDraft) -> u64 {
+        ///
+        /// # Arguments
+        /// * `author` - The account creating the temperature check (must prove ownership)
+        /// * `draft` - The temperature check draft data
+        pub fn make_temperature_check(
+            &mut self,
+            author: Global<Account>,
+            draft: TemperatureCheckDraft,
+        ) -> u64 {
+            // Verify the author account is present in the transaction
+            Runtime::assert_access_rule(author.get_owner_role().rule);
+
             // Validate inputs
             assert!(
                 !draft.title.is_empty(),
                 "Temperature check title cannot be empty"
+            );
+            assert!(
+                !draft.short_description.is_empty(),
+                "Temperature check short description cannot be empty"
             );
             assert!(
                 !draft.description.is_empty(),
@@ -80,20 +102,19 @@ mod governance {
                 MAX_VOTE_OPTIONS
             );
             assert!(
-                draft.attachments.len() <= MAX_ATTACHMENTS,
-                "Too many attachments (max {})",
-                MAX_ATTACHMENTS
+                draft.links.len() <= MAX_LINKS,
+                "Too many links (max {})",
+                MAX_LINKS
             );
 
-            // Validate vote option IDs are unique
-            let mut seen_ids: Vec<ProposalVoteOptionId> = Vec::new();
+            // Validate vote option colors are unique
+            let mut seen_colors: Vec<VoteOptionColor> = Vec::new();
             for option in &draft.vote_options {
                 assert!(
-                    !seen_ids.contains(&option.id),
-                    "Duplicate vote option ID: {}",
-                    option.id.0
+                    !seen_colors.contains(&option.color),
+                    "Duplicate vote option color"
                 );
-                seen_ids.push(option.id);
+                seen_colors.push(option.color);
             }
 
             // Validate max_selections
@@ -106,6 +127,18 @@ mod governance {
                 );
             }
 
+            // Auto-generate IDs for vote options (0, 1, 2, ...)
+            let vote_options: Vec<ProposalVoteOption> = draft
+                .vote_options
+                .into_iter()
+                .enumerate()
+                .map(|(index, input)| ProposalVoteOption {
+                    id: ProposalVoteOptionId(index as u32),
+                    label: input.label,
+                    color: input.color,
+                })
+                .collect();
+
             let id = self.temperature_check_count;
             self.temperature_check_count += 1;
 
@@ -114,10 +147,10 @@ mod governance {
 
             let temperature_check = TemperatureCheck {
                 title: draft.title,
+                short_description: draft.short_description,
                 description: draft.description,
-                vote_options: draft.vote_options,
-                attachments: draft.attachments,
-                rfc_url: draft.rfc_url,
+                vote_options,
+                links: draft.links,
                 quorum: self.governance_parameters.temperature_check_quorum,
                 max_selections: draft.max_selections,
                 votes: KeyValueStore::new(),
@@ -125,6 +158,7 @@ mod governance {
                 start: now,
                 deadline,
                 elevated_proposal_id: None,
+                author,
             };
 
             let title = temperature_check.title.clone();
@@ -170,10 +204,10 @@ mod governance {
 
             let proposal = Proposal {
                 title: tc.title.clone(),
+                short_description: tc.short_description.clone(),
                 description: tc.description.clone(),
                 vote_options: tc.vote_options.clone(),
-                attachments: tc.attachments.clone(),
-                rfc_url: tc.rfc_url.clone(),
+                links: tc.links.clone(),
                 quorum: self.governance_parameters.proposal_quorum,
                 max_selections: tc.max_selections,
                 votes: KeyValueStore::new(),
@@ -181,6 +215,7 @@ mod governance {
                 start: now,
                 deadline,
                 temperature_check_id,
+                author: tc.author,
             };
 
             tc.elevated_proposal_id = Some(proposal_id);

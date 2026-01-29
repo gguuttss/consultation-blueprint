@@ -5,6 +5,7 @@ use crate::{
 };
 
 #[blueprint]
+#[events(DelegationCreatedEvent, DelegationRemovedEvent)]
 mod vote_delegation {
     use super::*;
 
