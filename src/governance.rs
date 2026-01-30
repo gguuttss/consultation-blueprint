@@ -159,6 +159,7 @@ mod governance {
                 deadline,
                 elevated_proposal_id: None,
                 author,
+                last_vote_at: now,
             };
 
             let title = temperature_check.title.clone();
@@ -216,6 +217,7 @@ mod governance {
                 deadline,
                 temperature_check_id,
                 author: tc.author,
+                last_vote_at: now,
             };
 
             tc.elevated_proposal_id = Some(proposal_id);
@@ -250,9 +252,9 @@ mod governance {
             Runtime::assert_access_rule(account.get_owner_role().rule);
 
             // Get the temperature check
-            let tc = self
+            let mut tc = self
                 .temperature_checks
-                .get(&temperature_check_id)
+                .get_mut(&temperature_check_id)
                 .expect("Temperature check not found");
 
             // Check the vote is still open
@@ -272,8 +274,9 @@ mod governance {
                 "Account has already voted on this temperature check"
             );
 
-            // Record the vote
+            // Record the vote and update last_vote_at
             tc.votes.insert(account, vote);
+            tc.last_vote_at = now;
 
             Runtime::emit_event(TemperatureCheckVotedEvent {
                 temperature_check_id,
@@ -301,9 +304,9 @@ mod governance {
             Runtime::assert_access_rule(account.get_owner_role().rule);
 
             // Get the proposal
-            let proposal = self
+            let mut proposal = self
                 .proposals
-                .get(&proposal_id)
+                .get_mut(&proposal_id)
                 .expect("Proposal not found");
 
             // Check the vote is still open
@@ -362,8 +365,9 @@ mod governance {
                 "Account has already voted on this proposal"
             );
 
-            // Record the votes
+            // Record the votes and update last_vote_at
             proposal.votes.insert(account, votes.clone());
+            proposal.last_vote_at = now;
 
             Runtime::emit_event(ProposalVotedEvent {
                 proposal_id,

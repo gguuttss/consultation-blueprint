@@ -121,6 +121,8 @@ pub struct TemperatureCheck {
     pub elevated_proposal_id: Option<u64>,
     /// The account that created this temperature check
     pub author: Global<Account>,
+    /// Timestamp of the last vote cast, initialized at creation (useful for cache invalidation)
+    pub last_vote_at: Instant,
 }
 
 /// Struct for a proposal (GP - Governance Proposal)
@@ -147,6 +149,8 @@ pub struct Proposal {
     pub temperature_check_id: u64,
     /// The account that created the original temperature check
     pub author: Global<Account>,
+    /// Timestamp of the last vote cast, initialized at creation (useful for cache invalidation)
+    pub last_vote_at: Instant,
 }
 
 // =============================================================================
